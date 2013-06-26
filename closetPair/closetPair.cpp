@@ -6,9 +6,11 @@
 #include<algorithm>
 #include<cmath>
 
+#define NOW_DEBUG
+
 typedef double DType;
 #define MPI_DT_ MPI_DOUBLE
-const int DEFAULT_N = 32;
+const int DEFAULT_N = 16;
 const DType oo = 2e6;
 const DType eps = 1e-6;
 
@@ -35,6 +37,13 @@ int* recvcounts;
 int* rdispls;
 int* odrX;
 
+inline DType sqr(DType x){
+    return x*x;
+}
+inline DType getDis(DType x1,DType y1,DType x2,DType y2){
+    return sqrt(sqr(x1-x2)+sqr(y1-y2));
+}
+
 void init(){
     sameData = new DType[len+len];
 }
@@ -55,6 +64,46 @@ void genRandom(){
         sameData[i+i+1] = rand()%32767;
 #endif
     }
+#ifdef NOW_DEBUG
+    DType* dd;
+    if (!rank){
+        dd = new DType[n+n];
+        for (int i=0;i<n+n;++i){
+            dd[i] = rand()%100;
+        }
+        dd[ 0] = 96; dd[ 1] = 65; dd[ 2] = 98; dd[ 3] = 48;
+        dd[ 4] = 82; dd[ 5] = 53; dd[ 6] = 86; dd[ 7] = 84;
+        dd[ 8] = 32; dd[ 9] = 82; dd[10] = 23; dd[11] = 99;
+        dd[12] =  0; dd[13] = 78; dd[14] = 46; dd[15] = 48;
+        dd[16] =  6; dd[17] = 11; dd[18] = 43; dd[19] = 83;
+        dd[20] = 16; dd[21] = 97; dd[22] = 14; dd[23] =  6;
+        dd[24] = 91; dd[25] = 68; dd[26] = 30; dd[27] = 87;
+        dd[28] = 85; dd[29] = 93; dd[30] = 69; dd[31] = 81;
+        DType answer = oo;
+        for (int i=0;i<n;++i){
+            for (int j=i+1;j<n;++j){
+                answer = std::min(answer,getDis(dd[i+i],dd[i+i+1],dd[j+j],dd[j+j+1]));
+            }
+        }
+        printf("BestAnswer = %lf.\n",answer);
+        for (int i=0;i<len+len;++i){
+            sameData[i] = dd[i];
+        }
+        for (int i=1;i<size;++i){
+            MPI_Send(dd+i*len*2,len+len,MPI_DT_,i,i,MPI_COMM_WORLD);
+        }
+        for (int i=0;i<n;++i){
+            printf("(%d, %d) ",int(dd[i+i]),int(dd[i+i+1]));
+        }
+        printf("\n");
+        fflush(stdout);
+        delete[] dd;
+    } else {
+        MPI_Status status;
+        MPI_Recv(sameData,len+len,MPI_DT_,0,rank,MPI_COMM_WORLD,&status);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+#endif
 }
 
 void sample(int sampleCount){
@@ -75,7 +124,7 @@ void sample(int sampleCount){
         MPI_Bcast(divide,size-1,MPI_DT_,0,MPI_COMM_WORLD);
         delete[] allChosen;
     } else {
-        MPI_Gather(data,sampleCount,MPI_DT_,NULL,0,MPI_DT_,0,MPI_COMM_WORLD);
+        MPI_Gather(sampleData,sampleCount,MPI_DT_,NULL,0,MPI_DT_,0,MPI_COMM_WORLD);
         MPI_Bcast(divide,size-1,MPI_DT_,0,MPI_COMM_WORLD);
     }
     delete[] sampleData;
@@ -126,12 +175,6 @@ void remap(){
 
 bool cmp(const int& lhs,const int& rhs){
     return data[lhs+lhs]<data[rhs+rhs];
-}
-inline DType sqr(DType x){
-    return x*x;
-}
-inline DType getDis(DType x1,DType y1,DType x2,DType y2){
-    return sqrt(sqr(x1-x2)+sqr(y1-y2));
 }
 DType go(int left,int right,int* aim,int* tmpa){
     if (right==left){
@@ -204,7 +247,7 @@ void dcc(){
 }
 
 inline int getNodeType(int l,int r,int& ot){
-    int ss = 1<<(l-1);
+    int ss = 1<<l;
     if (r&(ss-1)){
         return -1;
     }
@@ -327,7 +370,6 @@ void solve(){
     
     tmpData0 = new int[len];
     data0 = new DType[len+len];
-    
     dcc();
     int maxLevel = 1;
     while ((1<<maxLevel)<size){
@@ -356,6 +398,7 @@ int main(int argc,char* argv[]){
         n += size-n%size;
     }
     len = n/size;
+    init();
     genRandom();
     solve();
     finz();
