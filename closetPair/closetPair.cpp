@@ -6,11 +6,11 @@
 #include<algorithm>
 #include<cmath>
 
-#define NOW_DEBUG
+//#define NOW_DEBUG
 
 typedef double DType;
 #define MPI_DT_ MPI_DOUBLE
-const int DEFAULT_N = 16;
+const int DEFAULT_N = 4800;
 const DType oo = 2e6;
 const DType eps = 1e-6;
 
@@ -43,6 +43,12 @@ inline DType sqr(DType x){
 inline DType getDis(DType x1,DType y1,DType x2,DType y2){
     return sqrt(sqr(x1-x2)+sqr(y1-y2));
 }
+bool cmpX(const int& lhs,const int& rhs){
+    return data[lhs+lhs]<data[rhs+rhs];
+}
+bool cmpY(const int& lhs,const int& rhs){
+    return data[lhs+lhs+1]<data[rhs+rhs+1];
+}
 
 void init(){
     sameData = new DType[len+len];
@@ -69,16 +75,8 @@ void genRandom(){
     if (!rank){
         dd = new DType[n+n];
         for (int i=0;i<n+n;++i){
-            dd[i] = rand()%100;
+            dd[i] = rand()%100000;
         }
-        dd[ 0] = 96; dd[ 1] = 65; dd[ 2] = 98; dd[ 3] = 48;
-        dd[ 4] = 82; dd[ 5] = 53; dd[ 6] = 86; dd[ 7] = 84;
-        dd[ 8] = 32; dd[ 9] = 82; dd[10] = 23; dd[11] = 99;
-        dd[12] =  0; dd[13] = 78; dd[14] = 46; dd[15] = 48;
-        dd[16] =  6; dd[17] = 11; dd[18] = 43; dd[19] = 83;
-        dd[20] = 16; dd[21] = 97; dd[22] = 14; dd[23] =  6;
-        dd[24] = 91; dd[25] = 68; dd[26] = 30; dd[27] = 87;
-        dd[28] = 85; dd[29] = 93; dd[30] = 69; dd[31] = 81;
         DType answer = oo;
         for (int i=0;i<n;++i){
             for (int j=i+1;j<n;++j){
@@ -114,6 +112,21 @@ void sample(int sampleCount){
         std::swap(sameData[i+i+1],sameData[tmp+tmp+1]);
         sampleData[i] = sameData[i+i];
     }
+/*
+#ifdef NOW_DEBUG
+    for (int i=0;i<size;++i){
+        if (i==rank){
+            printf("[PROC %2d] sampleData = ",rank);
+            for (int j=0;j<sampleCount;++j){
+                printf("%d ",int(sampleData[j]));
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+#endif
+*/
     if (!rank){
         DType* allChosen = new DType[sampleCount*size];
         MPI_Gather(sampleData,sampleCount,MPI_DT_,allChosen,sampleCount,MPI_DT_,0,MPI_COMM_WORLD);
@@ -127,9 +140,52 @@ void sample(int sampleCount){
         MPI_Gather(sampleData,sampleCount,MPI_DT_,NULL,0,MPI_DT_,0,MPI_COMM_WORLD);
         MPI_Bcast(divide,size-1,MPI_DT_,0,MPI_COMM_WORLD);
     }
+/*
+#ifdef NOW_DEBUG
+    for (int i=0;i<size;++i){
+        if (i==rank){
+            printf("[PROC %2d] divide = ",rank);
+            for (int j=0;j<size-1;++j){
+                printf("%d ",int(divide[j]));
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+#endif
+*/
     delete[] sampleData;
 }
 void getDivide(){
+/*
+#ifdef NOW_DEBUG
+    printf("[PROC %2d] HERE @ : %d\n",rank,__LINE__);
+    fflush(stdout);
+    MPI_Barrier(MPI_COMM_WORLD);
+#endif
+*/
+    odrX = new int[len];
+    for (int i=0;i<len;++i){
+        odrX[i] = i;
+    }
+    data = sameData;
+    sameData = new DType[len+len];
+    std::sort(odrX,odrX+len,cmpX);
+    for (int j=0;j<len;++j){
+        int i = odrX[j];
+        sameData[j+j] = data[i+i];
+        sameData[j+j+1] = data[i+i+1];
+    }
+    delete[] data;
+    delete[] odrX;
+/*
+#ifdef NOW_DEBUG
+    printf("[PROC %2d] HERE @ : %d\n",rank,__LINE__);
+    fflush(stdout);
+    MPI_Barrier(MPI_COMM_WORLD);
+#endif
+*/
     int st = 0;
     while (st<len&&sameData[st+st]<divide[0]){
         ++st;
@@ -143,6 +199,21 @@ void getDivide(){
         num[i] = st-num[i];
     }
     num[size-1] = len-st;
+/*
+#ifdef NOW_DEBUG
+    for (int i=0;i<size;++i){
+        if (i==rank){
+            printf("[PROC %2d] num = ",rank);
+            for (int j=0;j<size;++j){
+                printf("%d ",num[j]);
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+#endif
+*/
 }
 void remap(){
     MPI_Allgather(num,size,MPI_INT,cnt,size,MPI_INT,MPI_COMM_WORLD);
@@ -173,9 +244,6 @@ void remap(){
     }
 }
 
-bool cmp(const int& lhs,const int& rhs){
-    return data[lhs+lhs]<data[rhs+rhs];
-}
 DType go(int left,int right,int* aim,int* tmpa){
     if (right==left){
         aim[left] = odrX[left];
@@ -235,7 +303,7 @@ void dcc(){
     for (int i=0;i<len;++i){
         odrX[i] = i;
     }
-    std::sort(odrX,odrX+len,cmp);
+    std::sort(odrX,odrX+len,cmpX);
     bestAnswer = go(0,len-1,tmpData0,tmpData1);
     delete[] odrX;
     delete[] tmpData1;
@@ -255,7 +323,7 @@ inline int getNodeType(int l,int r,int& ot){
     if (ot>=size){
         return -1;
     }
-    return r&ss;
+    return r&ss?1:0;
 }
 void selectData(int l){
     int lb = rank;
@@ -271,6 +339,16 @@ void selectData(int l){
         }
     }
     curLen = j;
+/*
+#ifdef NOW_DEBUG
+    printf("[PROC %2d] lb = %d, rb = %d.\n[PROC %2d] bestAnswer = %lf.\n[PROC %2d] selected Data = ",rank,lb,rb,rank,bestAnswer,rank);
+    for (int i=0;i<curLen;++i){
+        printf("(%d, %d) ",int(data0[i+i]),int(data0[i+i+1]));
+    }
+    printf("\n");
+    fflush(stdout);
+#endif
+*/
 }
 void merge(){
     DType* data1 = data+curLen+curLen;
@@ -311,7 +389,18 @@ void merge(){
             ++k;
         }
     }
+/*
+#ifdef NOW_DEBUG
+    printf("[PROC %2d] merged Data = ",rank);
+    for (int i=0;i<curLen+otLen;++i){
+        printf("(%d, %d) ",int(data[i+i]),int(data[i+i+1]));
+    }
+    printf("\n");
+    fflush(stdout);
+#endif
+*/
     std::swap(data,data0);
+    len = curLen;
 }
 void reduceAnswer(int level){
     if (level>0){
@@ -321,21 +410,44 @@ void reduceAnswer(int level){
     MPI_Allreduce(&tmpBestAnswer,&bestAnswer,1,MPI_DT_,MPI_MIN,MPI_COMM_WORLD);
     int ot;
     int nodeType = getNodeType(level,rank,ot);
+/*
+#ifdef NOW_DEBUG
+    for (int i=0;i<size;++i){
+        if (i==rank){
+            printf("[PROC %2d] level = %d, ot = %d, type = %d\n",rank,level,ot,nodeType);
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+#endif
+*/
     if (1==nodeType){//sender
         selectData(level);
         MPI_Send(&curLen,1,MPI_INT,ot,level,MPI_COMM_WORLD);
         MPI_Send(data0,curLen*2,MPI_DT_,ot,level,MPI_COMM_WORLD);
+/*
+#ifdef NOW_DEBUG
+        printf("[PROC %2d] level = %d, ot = %d, type = %d, curLen = %d\n",rank,level,ot,nodeType,curLen);
+        fflush(stdout);
+#endif
+*/
     } else if (0==nodeType){//receiver
         selectData(level);
         MPI_Status status;
         MPI_Recv(&otLen,1,MPI_INT,ot,level,MPI_COMM_WORLD,&status);
         delete[] data;
-        data = new DType[otLen+otLen+curLen+curLen];
+        data = new DType[std::max(otLen+otLen+curLen+curLen,1)];
         MPI_Recv(data+curLen+curLen,otLen*2,MPI_DT_,ot,level,MPI_COMM_WORLD,&status);
         merge();
+/*
+#ifdef NOW_DEBUG
+        printf("[PROC %2d] level = %d, ot = %d, type = %d, curLen = %d, otLen = %d, bestAnswer = %lf\n",rank,level,ot,nodeType,curLen,otLen,bestAnswer);
+        fflush(stdout);
+#endif
+*/
     } else {//others
     }
-    
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 void solve(){
     if (size==1){
@@ -358,6 +470,21 @@ void solve(){
     getDivide();
     remap();
     len = nwi[rank+1]-nwi[rank];
+/*
+#ifdef NOW_DEBUG
+    for (int i=0;i<size;++i){
+        if (i==rank){
+            printf("[PROC %2d] len = %d\n[PROC %2d] data = ",rank,len,rank);
+            for (int j=0;j<len;++j){
+                printf("(%d, %d) ",int(data[j+j]),int(data[j+j+1]));
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+#endif
+*/
     {
         delete[] cnt;
         delete[] num;
@@ -371,6 +498,21 @@ void solve(){
     tmpData0 = new int[len];
     data0 = new DType[len+len];
     dcc();
+/*
+#ifdef NOW_DEBUG
+    for (int i=0;i<size;++i){
+        if (i==rank){
+            printf("[PROC %2d] len = %d, bestAnswer = %lf.\n[PROC %2d] data = ",rank,len,bestAnswer,rank);
+            for (int j=0;j<len;++j){
+                printf("(%d, %d) ",int(data0[j+j]),int(data0[j+j+1]));
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+#endif
+*/
     int maxLevel = 1;
     while ((1<<maxLevel)<size){
         ++maxLevel;
@@ -378,7 +520,6 @@ void solve(){
     reduceAnswer(maxLevel-1);
     tmpBestAnswer = bestAnswer;
     MPI_Allreduce(&tmpBestAnswer,&bestAnswer,1,MPI_DT_,MPI_MIN,MPI_COMM_WORLD);
-    
     delete[] tmpData0;
     delete[] divide;
     delete[] data;
