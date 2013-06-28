@@ -6,9 +6,11 @@
 #include<algorithm>
 #include<cmath>
 
+//#define NOW_DEBUG
+
 typedef double DType;
 #define MPI_DT_ MPI_DOUBLE
-const int DEFAULT_N = 1024;
+const int DEFAULT_N = 4;
 const DType ERROR_VALUE = 1e-3;
 const char DEFAULT_FILENAME[] = "input.txt";
 
@@ -58,6 +60,21 @@ DType vec_dot(DType* va,DType* vb,int ll){
     }
     DType all_sum;
     MPI_Allreduce(&sub_sum,&all_sum,1,MPI_DT_,MPI_SUM,MPI_COMM_WORLD);
+/*
+#ifdef NOW_DEBUG
+    for (int i=0;i<size;++i){
+        if (i==rank){
+            printf("[PROC %2d] sub_sum = %lf, all_sum = %lf\n[PROC %2d] v = ",rank,sub_sum,all_sum,rank);
+            for (int j=0;j<ll;++j){
+                printf("(%lf, %lf) ",va[i],vb[i]);
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+#endif
+*/
     return all_sum;
 }
 void mtx_vec_mul(DType* res,DType** mm,DType* vv,int l1,int l2){
@@ -75,7 +92,7 @@ void vec_addass(DType* va,DType* vb,DType cc,int ll){
 }
 void vec_mad(DType* vv,DType* va,DType* vb,DType cc,int ll){
     for (int i=0;i<ll;++i){
-        vv[i] = vb[i]+cc*va[i];
+        vv[i] = va[i]+cc*vb[i];
     }
 }
 
@@ -87,7 +104,7 @@ void load_(FILE* fin){
     }
 }
 void load(const char* fn=NULL){
-    if (rank=size-1){
+    if (rank==size-1){
         FILE* fin = fopen((NULL==fn)?DEFAULT_FILENAME:fn,"r");
         for (int i=0;i<size;++i){
             load_(fin);
@@ -113,23 +130,71 @@ void load(const char* fn=NULL){
     memcpy(p,b,sizeof(DType)*n);
     rrNow = vec_dot(r,r,len);
 }
+#ifdef NOW_DEBUG
+void dp_arr(const char* s,DType* arr,int l){
+    for (int i=0;i<size;++i){
+        if (rank==i){
+            printf("[PROC %2d] %s = ",rank,s);
+            for (int j=0;j<l;++j){
+                printf("%lf ",arr[j]);
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+}
+void dp_1(const char* s,DType res){
+    for (int i=0;i<size;++i){
+        if (rank==i){
+            printf("[PROC %2d] %s = %lf\n",rank,s,res);
+            fflush(stdout);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+}
+#endif
 void solve(){
-    while (fabs(rrNow)<ERROR_VALUE){
+    //int count = 0;
+    while (fabs(rrNow)>=ERROR_VALUE){//&&++count<=2){
         mtx_vec_mul(pn,a,p,len,n);
+#ifdef NOW_DEBUG
+        dp_arr("pn",pn,len);
+#endif
         ppNow = vec_dot(pn,p+rank*len,len);
+#ifdef NOW_DEBUG
+        dp_1("ppNow",ppNow);
+#endif
         DType alpha = rrNow/ppNow;
         vec_addass(x,p+rank*len,alpha,len);
+#ifdef NOW_DEBUG
+        dp_arr("x",x,len);
+#endif
         vec_addass(r,pn,-alpha,len);
+#ifdef NOW_DEBUG
+        dp_arr("r",r,len);
+#endif
         rrLast = rrNow;
         rrNow = vec_dot(r,r,len);
+#ifdef NOW_DEBUG
+        dp_1("rrNow",rrNow);
+#endif
         if (fabs(rrNow)<ERROR_VALUE){
             break;
         }
-        vec_mad(pn,r,pn,rrNow/rrLast,len);
+        DType beta = rrNow/rrLast;
+#ifdef NOW_DEBUG
+        dp_1("beta",beta);
+#endif
+        vec_mad(pn,r,p+rank*len,beta,len);
+#ifdef NOW_DEBUG
+        dp_arr("p",pn,len);
+#endif
         MPI_Allgather(pn,len,MPI_DT_,p,len,MPI_DT_,MPI_COMM_WORLD);
     }
     MPI_Gather(x,len,MPI_DT_,p,len,MPI_DT_,0,MPI_COMM_WORLD);
     if (!rank){
+        printf("x = ");
         for (int i=0;i<n;++i){
             printf("%lf ",p[i]);
         }
