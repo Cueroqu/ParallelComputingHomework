@@ -10,8 +10,8 @@
 
 typedef double DType;
 #define MPI_DT_ MPI_DOUBLE
-const int DEFAULT_N = 4;
-const DType ERROR_VALUE = 1e-3;
+const int DEFAULT_N = 32;
+const DType ERROR_VALUE = 1e-8;
 const char DEFAULT_FILENAME[] = "input.txt";
 
 DType** a;
@@ -194,7 +194,7 @@ void solve(){
     }
     MPI_Gather(x,len,MPI_DT_,p,len,MPI_DT_,0,MPI_COMM_WORLD);
     if (!rank){
-        printf("x = ");
+        //printf("x = ");
         for (int i=0;i<n;++i){
             printf("%lf ",p[i]);
         }
